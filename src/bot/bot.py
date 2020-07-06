@@ -1,86 +1,109 @@
-import time
+import logging
 from queue import Queue
+import time
 from urllib.request import urlopen
 from bs4 import BeautifulSoup
-from threading import Thread, Lock
+from threading import Thread
+
+NUM_THREADS = 6
+
+FORMAT = "[%(threadName)s, %(asctime)s] %(message)s"
+logging.basicConfig(filename="logfile.log", level=logging.DEBUG, format=FORMAT)
+
+
+def count_time(func):
+    """Decorator to count duration of function
+
+    :param func:
+    :return:
+    """
+
+    def decorated_func(*args, **kwargs):
+        st = time.perf_counter()
+        result = func(*args, **kwargs)
+        end = time.perf_counter()
+        logging.info(f"performance time: {end - st}")
+        return result
+
+    return decorated_func
 
 
 class Bot:
+    """Bot to count number of internal a href's
+
+    """
+
     def __init__(self):
+        """Init class
+
+        """
         self.res_queue = Queue()
-        self.size = 0
+        self.results = 0
 
-    @staticmethod
-    def get_data_url(url):
-        with urlopen(url) as r:
-            bs = BeautifulSoup(r.read(), 'html.parser')
-            res = bs.select('a[href*="tvn24"]:not([href^="mailto"])')
-            res = {re.get('href') for re in res if not re.get('href').endswith('/')}
-            return res
+    def get_data(self, link_queue):
+        """Obtained set of urls for given queue
 
-    def get_data(self, link_queue, size_lock):
+        :param link_queue: queue with url links
+        :return:
+        """
         while not link_queue.empty():
             url = link_queue.get(block=False)
-            with urlopen(url) as r:
-                bs = BeautifulSoup(r.read(), 'html.parser')
-                res = bs.select('a[href*="tvn24"]:not([href^="mailto"])')
-                res = {re.get('href') for re in res if not re.get('href').endswith('/')}
+            try:
+                with urlopen(url) as r:
+                    bs = BeautifulSoup(r.read(), 'html.parser')
+                    res = bs.select('a[href*="tvn24"]:not([href^="mailto"])')
+                    res = {re.get('href') for re in res if not re.get('href').endswith('/')}
+            except:
+                pass
+            else:
+                link_queue.task_done()
+                self.res_queue.put(res)
 
-            link_queue.task_done()
-            self.res_queue.put(res)
+    def fill_link_queue(self, link_queue=Queue()):
+        """fill the link_queue with urls
 
-            with size_lock:
-                self.size += 1
+        :param link_queue: link Queue
+        :return: link_queue
+        """
+        while not self.res_queue.empty():
+            for urls in self.res_queue.get():
+                link_queue.put(urls)
+        self.results += link_queue.qsize()
 
-    def manage_threads(self, url, n):
+        return link_queue
+
+    @count_time
+    def manage_bot(self, url, concurrency=True, levels=1):
+        """Manage counting with threads
+
+        :param url: main url
+        :param concurrency: yes or no to run function in threads
+        :param levels: how deep counts the internal url's
+        :return:
+        """
         start_queue = Queue()
-        size_lock = Lock()
         start_queue.put(url)
-        self.get_data(start_queue, size_lock)
 
-        start = time.perf_counter()
-        # TODO create method for multiply run this code
-        # TODO add docstrings, DRY, KISS pylint
-        for _ in range(n):
-            link_queue = Queue()
-            print("zaczynamy")
-            print(self.res_queue.qsize())
+        self.get_data(start_queue)
 
-            for url in range(self.res_queue.qsize()):
-                for item in self.res_queue.get():
-                    link_queue.put(item)
+        for level in range(levels):
+            logging.info(f"start level {level}")
 
-            num_thread = 6
+            link_queue = self.fill_link_queue()
 
-            for _ in range(num_thread):
-                t = Thread(target=self.get_data, args=(link_queue, size_lock))
-                t.start()
+            if concurrency:
+                for _ in range(NUM_THREADS):
+                    t = Thread(target=self.get_data, args=(link_queue,))
+                    t.start()
+                link_queue.join()
+            else:
+                self.get_data(link_queue)
 
-            link_queue.join()
-
-            end = time.perf_counter()
-            print(end - start)
-
-        links_sum = sum(len(self.res_queue.get()) for _ in range(self.res_queue.qsize()))
-
-        print(links_sum, self.size)
-
-    def manage_without_threads(self, url):
-
-        results = self.get_data_url(url)
-        start = time.perf_counter()
-        links = []
-        for url in results:
-            links.append(self.get_data_url(url))
-
-        end = time.perf_counter()
-        print(end - start)
-
-        links_sum = sum(len(result) for result in links)
-
-        print(links_sum)
+        for _ in range(self.res_queue.qsize()):
+            self.results += len(self.res_queue.get())
+        logging.info(f"number of results: {self.results}")
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     g = Bot()
-    g.manage_threads("https://www.tvn24.pl", 1)
+    g.manage_bot('https://www.tvn24.pl', concurrency=False)
