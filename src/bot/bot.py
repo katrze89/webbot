@@ -1,9 +1,10 @@
+""" Package for bot """
 import logging
 from queue import Queue
 import time
 from urllib.request import urlopen
-from bs4 import BeautifulSoup
 from threading import Thread
+from bs4 import BeautifulSoup
 
 NUM_THREADS = 6
 
@@ -19,10 +20,10 @@ def count_time(func):
     """
 
     def decorated_func(*args, **kwargs):
-        st = time.perf_counter()
+        start = time.perf_counter()
         result = func(*args, **kwargs)
         end = time.perf_counter()
-        logging.info(f"performance time: {end - st}")
+        logging.info(f"performance time: {end - start}")
         return result
 
     return decorated_func
@@ -49,11 +50,11 @@ class Bot:
         while not link_queue.empty():
             url = link_queue.get(block=False)
             try:
-                with urlopen(url) as r:
-                    bs = BeautifulSoup(r.read(), 'html.parser')
-                    res = bs.select('a[href*="tvn24"]:not([href^="mailto"])')
+                with urlopen(url) as url_open:
+                    beautys = BeautifulSoup(url_open.read(), 'html.parser')
+                    res = beautys.select('a[href*="tvn24"]:not([href^="mailto"])')
                     res = {re.get('href') for re in res if not re.get('href').endswith('/')}
-            except:
+            except:  # pylint: disable=bare-except
                 pass
             else:
                 link_queue.task_done()
@@ -93,8 +94,8 @@ class Bot:
 
             if concurrency:
                 for _ in range(NUM_THREADS):
-                    t = Thread(target=self.get_data, args=(link_queue,))
-                    t.start()
+                    thread = Thread(target=self.get_data, args=(link_queue,))
+                    thread.start()
                 link_queue.join()
             else:
                 self.get_data(link_queue)
@@ -105,5 +106,5 @@ class Bot:
 
 
 if __name__ == '__main__':
-    g = Bot()
-    g.manage_bot('https://www.tvn24.pl', concurrency=False)
+    bot = Bot()  # pylint: disable=invalid-name
+    bot.manage_bot('https://www.tvn24.pl', concurrency=False)
