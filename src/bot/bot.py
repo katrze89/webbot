@@ -13,7 +13,7 @@ logging.basicConfig(filename="logfile.log", level=logging.DEBUG, format=FORMAT)
 
 
 def count_time(func):
-    """Decorator to count duration of function
+    """Decorator to calculate duration of function
 
     :param func:
     :return:
@@ -51,8 +51,8 @@ class Bot:
             url = link_queue.get(block=False)
             try:
                 with urlopen(url) as url_open:
-                    beautys = BeautifulSoup(url_open.read(), 'html.parser')
-                    res = beautys.select('a[href*="tvn24"]:not([href^="mailto"])')
+                    beauty_url = BeautifulSoup(url_open.read(), 'html.parser')
+                    res = beauty_url.select('a[href*="tvn24"]:not([href^="mailto"])')
                     res = {re.get('href') for re in res if not re.get('href').endswith('/')}
             except:  # pylint: disable=bare-except
                 pass
